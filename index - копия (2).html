@@ -1,0 +1,667 @@
+﻿<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aries</title>
+  </head>
+  <body style='background: #000; margin: 0; padding: 0; width: 100%; height: 100%;'>
+    <canvas id='display' width='1' height='1' style='width: 100%; height: 100%;' />
+
+    <script>
+
+
+        /*
+        ========================================
+        
+        Plan:
+        1) Karta;
+        2) Igrok;
+        3) Tardis;
+        4) Angel(-s);
+        5) Kamera;
+        6) Upravlenie;
+        7) Zaciklivanie;
+        --------------
+        8) Resursy;
+        9) Rezhym otladki.
+        
+        ========================================
+      
+        1) Karta:
+          a. Parametry:
+            - Razmer;
+            - Tablica blokov;
+          b. Metody:
+            - Sluchainoe zapolnenie;
+            - Proverka sushchestvovaniya puti mezhdu dvumya tochkami;
+            - Poisk sluchainoi svobodnoi tochki;
+        2) Igrok:
+          a. Parametry:
+            - Kooedynaty;
+            - Napravlenie vzglyada;
+            [- Zdorovie;]
+            [-Tekushchie oruzhie];
+          b. Metody:
+            - Dvizhenie;
+            - Povorot;
+        3) Tardis:
+          a. Parametry:
+            - Koordinaty;
+            - Napravlenie dverei;
+            - Tekushchaya prozrachnost`;
+            - Stadii dvizheniya;
+            - Tekushchaya stadiya;
+            - Sostoyanie;
+          b. Metody:
+            - Obnovleniye sostoyaniya;
+            - Dvizhenie;
+        4) Angel:
+          a. Parametry:
+            - Koordinaty;
+            - Skorost`;
+          b. Metody:
+        5) Kamera:
+          a. Parametry:
+            - Shyrina ekrana;
+            - Vysota ekrana;
+            - Razreshenie;
+          b. Metody:
+            - Render;
+        6) Upravlenie:
+          a. Parametry:
+          b. Metody:
+        7) Zaciklivanie:
+          a. Parametry:
+          b. Metody:
+        -----------
+        8) Resursy:
+          a. Bloki;
+          b. Tekstury;
+        9) Rezhym otladki:
+      
+        ========================================
+        
+        */
+        /*
+         * Rezhym otladki
+         */
+
+
+        //===================================================================================================================================================
+        //======================================================   GLOBAL VARIABLES   =======================================================================
+        //===================================================================================================================================================
+
+        var CIRCLE = Math.PI * 2;
+        var off = 0;
+
+        // var DEBUG = false;
+
+        /*
+         *
+         */
+
+
+        var Resources = {
+            'Blocks': {
+                'Empty': 0,
+                'Tardis': 1,
+                'Wall': 2,
+                'Angel': 3 // sluzhebnii blok
+            },
+            'Heights': [0, 0.9, 1, 0.9],
+            'Textures': {
+                'Sky': new Bitmap('textures/deathvalley_panorama.jpg', 2000, 750),
+                'Wall': new Bitmap('textures/wall_texture.jpg', 1024, 1024),
+                'Tardis': new Bitmap('textures/tardis_main.png', 1024, 1024),
+                'Tardis_Doors': new Bitmap('textures/tardis_doors.png', 1024, 1024),
+                'Debug': new Bitmap('textures/debug_texture.png', 1024, 1024)
+            },
+            'Weapons': {
+                'Sonic_11': new Bitmap('textures/sonic_11.png', 335, 309)
+            },
+            'Enemies': {
+                'Angel': new Bitmap('textures/angel.png', 500, 500)
+            }
+        }
+
+        //===================================================================================================================================================
+        //=====================================================   CONTROLS   ================================================================================
+        //===================================================================================================================================================
+
+
+        function Controls() {
+            //   this.codes = { 37: 'left', 39: 'right', 38: 'forward', 40: 'backward' };
+            this.codes = { 65: 'left', 68: 'right', 87: 'forward', 83: 'backward', 69: 'action', 81: 'debug' };
+            this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false, 'action': false, 'debug': false };
+            document.addEventListener('keydown', this.onKey.bind(this, true), false);
+            document.addEventListener('keyup', this.onKey.bind(this, false), false);
+            document.addEventListener('touchstart', this.onTouch.bind(this), false);
+            document.addEventListener('touchmove', this.onTouch.bind(this), false);
+            document.addEventListener('touchend', this.onTouchEnd.bind(this), false);
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+
+        Controls.prototype.onTouch = function (e) {
+            var t = e.touches[0];
+            this.onTouchEnd(e);
+            if (t.pageY < window.innerHeight * 0.5) this.onKey(true, { keyCode: 38 });
+            else if (t.pageX < window.innerWidth * 0.5) this.onKey(true, { keyCode: 37 });
+            else if (t.pageY > window.innerWidth * 0.5) this.onKey(true, { keyCode: 39 });
+        };
+
+
+        //___________________________________________________________________________________________________________________________________________________
+
+
+        Controls.prototype.onTouchEnd = function (e) {
+            this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false };
+            e.preventDefault();
+            e.stopPropagation();
+        };
+
+
+        //___________________________________________________________________________________________________________________________________________________
+
+
+        Controls.prototype.onKey = function (val, e) {
+            var state = this.codes[e.keyCode];
+            if (typeof state === 'undefined') return;
+            this.states[state] = val;
+            e.preventDefault && e.preventDefault();
+            e.stopPropagation && e.stopPropagation();
+        };
+
+
+        //===================================================================================================================================================
+        //=====================================================   BITMAP   ==================================================================================
+        //===================================================================================================================================================
+
+        function Bitmap(src, width, height) {
+            this.image = new Image();
+            this.image.src = src;
+            this.width = width;
+            this.height = height;
+        }
+
+        //===================================================================================================================================================
+        //=====================================================   PLAYER   ==================================================================================
+        //===================================================================================================================================================
+
+        function Player(direction) {
+            this.coord = { x: 0, y: 0 };
+            this.direction = direction;
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Player.prototype.rotate = function (angle) {
+            this.direction = (this.direction + angle + CIRCLE) % (CIRCLE);
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Player.prototype.walk = function (distance, map) {
+            var dx = Math.cos(this.direction) * distance;
+            var dy = Math.sin(this.direction) * distance;
+            if (map.get(this.coord.x + dx, this.coord.y) <= Resources['Blocks']['Empty']) this.coord.x += dx;
+            if (map.get(this.coord.x, this.coord.y + dy) <= Resources['Blocks']['Empty']) this.coord.y += dy;
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Player.prototype.update = function (controls, map, seconds) {
+            if (controls.left) this.rotate(Math.PI * seconds);
+            if (controls.right) this.rotate(-Math.PI * seconds);
+            if (controls.forward) this.walk(3 * seconds, map);
+            if (controls.backward) this.walk(-3 * seconds, map);
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   TARDIS   ==================================================================================
+        //===================================================================================================================================================
+
+        function Tardis(direction) {
+            this.coord = { x: 0, y: 0 };
+            this.direction = direction;
+            this.alpha = 1;
+            this.moving_alpha = [1, 1, 0.25, 0.75, 0.25, 0.75, 0, 0];
+            this.current_stage = 1;
+            this.state = ["standing", "appearing", "disappearing", "not here"];
+            this.current_state = "standing";
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Tardis.prototype.update = function (controls, seconds, map) {
+            if (this.current_state == "standing") {
+                if (controls.action) {
+                    this.current_state = "disappearing";
+                };
+            };
+            if (this.current_state == "not here") {
+                if (controls.action) {
+                    this.current_state = "appearing";
+                    var coord = map.get_random();
+                    this.coord = coord;
+                    map.grid[this.coord.x][this.coord.y] = Resources['Blocks']['Tardis'];
+                };
+            };
+            if (this.current_state == "disappearing") {
+                this.current_stage = this.moving(this.current_stage, 1);
+                if (this.current_stage == this.moving_alpha.length - 1) {
+                    this.current_state = "not here";
+                    map.grid[this.coord.x][this.coord.y] = Resources['Blocks']['Empty'];
+                };
+            };
+            if (this.current_state == "appearing") {
+                this.current_stage = this.moving(this.current_stage, -1);
+                if (this.current_stage == 1) {
+                    this.current_state = "standing"
+                };
+            };
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Tardis.prototype.moving = function (stage, factor) {
+            var speed = 0.025;
+            if (stage <= this.moving_alpha.length - 1 && stage >= 0) {
+                var mult = this.moving_alpha[stage] >= this.moving_alpha[stage + factor] ? -1 : 1;
+                this.alpha = this.alpha + mult * speed >= 0 ? this.alpha + mult * speed : 0;
+                switch (mult) {
+                    case 1:
+                        {
+                            if (this.alpha >= this.moving_alpha[stage + factor]) { return (stage + factor); }
+                            else { return (stage) };
+                        }
+                    case -1:
+                        {
+                            if (this.alpha <= this.moving_alpha[stage + factor]) { return (stage + factor) }
+                            else { return (stage); };
+                        }
+                    default:
+                        {
+                            alert("Tardis Moving Stage Error 1");
+                            return -1
+                        }
+                };
+            }
+            else {
+                alert("Tardis Moving Stage Error 2");
+                return -1
+            };
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   TARDIS   ==================================================================================
+        //===================================================================================================================================================
+
+        function Angel() {
+            this.coord = { x: 0, y: 0 };
+        }
+
+        //===================================================================================================================================================
+        //=====================================================   MAP   =====================================================================================
+        //===================================================================================================================================================
+
+        function Map(size) {
+            this.size = size;
+            this.grid = new Array();
+            for (var i = 0; i <= size + 1; i++) { this.grid[i] = new Array(); }
+            this.light = 0;
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Map.prototype.get = function (x, y) {
+            x = Math.floor(x);
+            y = Math.floor(y);
+            if (x < 0 || x > this.size + 1 || y < 0 || y > this.size + 1) return -1;
+            return this.grid[x][y];
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Map.prototype.get_random = function () {
+            var k, l;
+            do {
+                k = Math.round(Math.random() * (this.size - 1) + 1);
+                l = Math.round(Math.random() * (this.size - 1) + 1);
+            }
+            while (this.grid[k][l] != Resources['Blocks']['Empty']);
+            return { x: k, y: l };
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Map.prototype.randomize = function (player, tardis) {
+            for (var j = 0; j <= this.size + 1; j++) {
+                this.grid[0][j] = this.grid[this.size + 1][j] = this.grid[j][0] = this.grid[j][this.size + 1] = Resources['Blocks']['Wall'];
+            }
+
+            var count;
+            do {
+                count = -1;
+
+                for (var i = 1; i <= this.size; i++) {
+                    for (var j = 1; j <= this.size; j++) {
+                        this.grid[i][j] = Math.random() < 0.3 ? Resources['Blocks']['Empty'] : Resources['Blocks']['Empty'];
+                    };
+                };
+
+                var coord = this.get_random();
+                tardis.coord = coord;
+                //this.grid[coord.x][coord.y] = Resources['Blocks']['Tardis'];
+
+                do {
+                    var coord1 = this.get_random();
+                } while (!this.path_exists(coord, coord1) && ++count < this.size * this.size);
+                player.coord.x = coord1.x + 0.5;
+                player.coord.y = coord1.y + 0.5;
+            } while (count >= this.size * this.size);
+
+            this.grid[2][1] = 2;
+            this.grid[9][2] = 2;
+            this.grid[9][3] = 2;
+            this.grid[9][4] = 2;
+            this.grid[8][4] = 2;
+            this.grid[8][9] = 1;
+            player.coord.x = 1.5;
+            player.coord.y = 1.5;
+            tardis.coord = { x: 8, y: 9 };
+        };
+
+        //___________________________________________________________________________________________________________________________________________________-
+
+        Map.prototype.path_exists = function (coord1, coord2) {
+            coord1.x = Math.floor(coord1.x);
+            coord1.y = Math.floor(coord1.y);
+            coord2.x = Math.floor(coord2.x);
+            coord2.y = Math.floor(coord2.y);
+
+            var queue = [];
+            queue.push(coord1);
+            visited = new Array();
+            for (var i = 0; i <= this.size + 1; i++) { visited[i] = new Array(); }
+            for (var i = 0; i <= this.size + 1; i++) {
+                for (var j = 0; j <= this.size + 1; j++) {
+                    if (this.grid[i][j] == Resources['Blocks']['Wall']) { visited[i][j] = true }
+                    else { visited[i][j] = false };
+                };
+            };
+            var elem;
+            while (queue.length != 0) {
+                elem = queue.shift();
+                if (visited[elem.x][elem.y] == false) {
+                    if (elem.x == coord2.x && elem.y == coord2.y) return true;
+                    visited[elem.x][elem.y] = true;
+                    if (visited[elem.x + 1][elem.y] == false) queue.push({ x: elem.x + 1, y: elem.y });
+                    if (visited[elem.x][elem.y + 1] == false) queue.push({ x: elem.x, y: elem.y + 1 });
+                    if (visited[elem.x - 1][elem.y] == false) queue.push({ x: elem.x - 1, y: elem.y });
+                    if (visited[elem.x][elem.y - 1] == false) queue.push({ x: elem.x, y: elem.y - 1 });
+                };
+            };
+            return false;
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Map.prototype.update = function (seconds) {
+            if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
+            else if (Math.random() * 5 < seconds) this.light = 2;
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   MAP.CAST   ================================================================================
+        //===================================================================================================================================================
+
+        Map.prototype.cast = function (point, angle, range) {
+            var self = this;
+            var sin = Math.sin(angle);
+            var cos = Math.cos(angle);
+            var noWall = { length2: Infinity };
+            var unsorted_ray = ray({ x: point.coord.x, y: point.coord.y, height: 0, distance: 0, block_type: Resources['Blocks']['Empty'], direction: 'N' });
+            return sorted_ray(unsorted_ray);
+
+            //___________________________________________________________________________________________________________________________________________________
+
+            function ray(origin) {
+                var stepX = step(sin, cos, origin.x, origin.y);
+                var stepY = step(cos, sin, origin.y, origin.x, true);
+                var nextStep = stepX.length2 < stepY.length2
+                    ? inspect(stepX, 1, 0, origin.distance, stepX.y)
+                    : inspect(stepY, 0, 1, origin.distance, stepY.x);
+                if (nextStep.distance > range) return [origin];
+                return [origin].concat(ray(nextStep));
+            }
+
+            //___________________________________________________________________________________________________________________________________________________
+
+            function sorted_ray(origin) {
+                var i = -1;
+                var j = -1
+                while (++i < origin.length && origin[i].height == 0);
+                var new_ray = [];
+                if (i < origin.length) new_ray[++j] = origin[i];
+                var flag = true;
+                while (++i < origin.length && flag && origin[i].block_type >= Resources['Blocks']['Empty']) {
+                    if (origin[i].height != 0) {
+                        new_ray[++j] = origin[i];
+                        if (origin[i].height == Resources['Heights'][Resources['Blocks']['Wall']]) flag = false;
+                    }
+                };
+                return new_ray;
+            }
+
+            //___________________________________________________________________________________________________________________________________________________
+
+            function step(rise, run, x, y, inverted) {
+                if (run === 0) return noWall;
+                var dx = run > 0 ? Math.floor(x + 1) - x : Math.ceil(x - 1) - x;
+                var dy = dx * (rise / run);
+                return {
+                    x: inverted ? y + dy : x + dx,
+                    y: inverted ? x + dx : y + dy,
+                    length2: dx * dx + dy * dy
+                };
+            }
+
+            //___________________________________________________________________________________________________________________________________________________
+
+            function inspect(step, shiftX, shiftY, distance, offset) {
+                var dx = cos < 0 ? shiftX : 0;
+                var dy = sin < 0 ? shiftY : 0;
+                step.block_type = self.get(step.x - dx, step.y - dy);
+                step.height = Resources['Heights'][step.block_type];
+
+                step.distance = distance + Math.sqrt(step.length2);
+                if (shiftX) {
+                    if (cos < 0) { step.shading = 2; step.direction = 'E'; }
+                    else { step.shading = /*0*/2; step.direction = 'W'; }
+                }
+                else {
+                    if (sin < 0) { step.shading = 2; step.direction = 'N'; }
+                    else { step.shading = /* 1*/2; step.direction = 'S'; }
+                }
+                var reverse_texture = 0;
+                if (step.direction == 'N' || step.direction == 'W') reverse_texture = 1;
+                step.offset = Math.abs(offset - Math.floor(offset) - reverse_texture);
+                return step;
+            }
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   CAMERA   ==================================================================================
+        //===================================================================================================================================================
+
+        function Camera(canvas, resolution, focalLength) {
+            this.ctx = canvas.getContext('2d');
+            this.width = canvas.width = window.innerWidth * 0.5;
+            this.height = canvas.height = window.innerHeight * 0.5;
+            this.resolution = resolution;
+            this.spacing = this.width / resolution;
+            this.focalLength = focalLength || 0.3;
+            this.range = 30;
+            this.lightRange = 5;
+            this.scale = (this.width + this.height) / 1500;
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Camera.prototype.render = function (player, map, tardis, controls) {
+            this.drawSky(player.direction, Resources['Textures']['Sky'], map.light);
+            this.drawColumns(player, map, tardis, controls);
+
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Camera.prototype.drawSky = function (direction, sky, ambient) {
+            var width = sky.width * (this.height / sky.height) * 2;
+            var left = (direction / CIRCLE) * -width;
+
+            this.ctx.save();
+            this.ctx.drawImage(sky.image, left, 0, width, this.height);
+            if (left < width - this.width) {
+                this.ctx.drawImage(sky.image, left + width, 0, width, this.height);
+            }
+            if (ambient > 0) {
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.globalAlpha = ambient * 0.1;
+                this.ctx.fillRect(0, this.height * 0.5, this.width, this.height * 0.5);
+            }
+            this.ctx.restore();
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Camera.prototype.drawColumns = function (player, map, tardis, controls) {
+            this.ctx.save(); 
+            for (var column = 0; column <= this.resolution - 1; column++) {
+                var x = column / this.resolution - 0.5;
+                var angle = Math.atan2(x, this.focalLength);
+                var ray = map.cast(player, player.direction + angle, this.range);
+                this.drawColumn(column, ray, angle, map, tardis, off); 
+            }
+            this.ctx.fillStyle = "#F00";
+            this.ctx.font = "italic 10pt Arial";
+            this.ctx.fillText(off, 20, 50);
+            this.ctx.restore();
+
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Camera.prototype.drawColumn = function (column, ray, angle, map, tardis) {
+            if (ray.length > 0) {
+                var ctx = this.ctx;
+                var left = Math.floor((this.resolution - column) * this.spacing);
+                var width = Math.ceil(this.spacing);
+
+                var j = ray.length - 1;
+                for (var i = this.range; i >= 0; i--) {
+                    var rainDrops = Math.pow(Math.random(), 3) * this.range / 10;
+                    var rain = (rainDrops > 0) && this.project(0.1, angle, i);
+
+                    while (j >= 0 && ray[j].distance > i) {
+                        var step = ray[j];
+                        switch (step.block_type) {
+                            case Resources['Blocks']['Wall']:
+                                {
+                                    var texture = Resources['Textures']['Debug'];
+                                    ctx.globalAlpha = 1;
+                                    var alpha_factor = 1;
+                                    break;
+                                }
+                            case Resources['Blocks']['Tardis']:
+                                {
+                                    if (step.direction == tardis.direction) var texture = Resources['Textures']['Tardis_Doors']
+                                    else var texture = Resources['Textures']['Tardis'];
+                                    ctx.globalAlpha = tardis.alpha;
+                                    var alpha_factor = tardis.alpha;
+                                    break;
+                                }
+                            default:
+                                {
+                                    var texture = Resources['Textures']['Wall'];
+                                }
+                        };
+                        textureX = Math.floor(texture.width * step.offset);
+                        var wall = this.project(step.height, angle, step.distance);
+                        ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height); //risuem polosku, znaya eyo teksturu, koordinaty' verxnej levoj
+                        //tochki poloski na samoj teksture, shirinu i vy'sotu poloski, verxnuyu levuyu tochku poloski uzhe na xolste, a takzhe dlinu i vy'sotu na xolste
+                        /* ctx.fillStyle = '#000000';
+                        ctx.globalAlpha = Math.min(Math.max((step.distance + step.shading) / this.lightRange - map.light, 0), alpha_factor);
+                        ctx.fillRect(left, wall.top, width, wall.height);*/
+                        --j;
+                    }
+                    /* ctx.fillStyle = '#ffffff';
+                    ctx.globalAlpha = 0.15;
+                    while (--rainDrops > 0) ctx.fillRect(left, Math.random() * rain.top, 1, rain.height);*/
+                };
+            };
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        Camera.prototype.project = function (height, angle, distance) {
+            var z = distance * Math.cos(angle);
+            var wallHeight = this.height * height / z;
+            var bottom = this.height / 2 * (1 + 1 / z);
+            return {
+                top: bottom - wallHeight,
+                height: wallHeight
+            };
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   GAMELOOP   ================================================================================
+        //===================================================================================================================================================
+
+        function GameLoop() {
+            this.frame = this.frame.bind(this);
+            this.lastTime = 0;
+            this.callback = function () { };
+        }
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        GameLoop.prototype.start = function (callback) {
+            this.callback = callback;
+            requestAnimationFrame(this.frame);
+        };
+
+        //___________________________________________________________________________________________________________________________________________________
+
+        GameLoop.prototype.frame = function (time) {
+            var seconds = (time - this.lastTime) / 1000;
+            this.lastTime = time;
+            if (seconds < 0.2) this.callback(seconds);
+            requestAnimationFrame(this.frame);
+        };
+
+        //===================================================================================================================================================
+        //=====================================================   MAIN   ====================================================================================
+        //===================================================================================================================================================
+
+        var display = document.getElementById('display');
+        var map = new Map(10);
+        var player = new Player(0);
+        var tardis = new Tardis('N');
+        var controls = new Controls();
+        var camera = new Camera(display, 360, 0.3);
+        var loop = new GameLoop();
+
+        map.randomize(player, tardis);
+
+        loop.start(function frame(seconds) {
+            map.update(seconds);
+            player.update(controls.states, map, seconds);
+            tardis.update(controls.states, seconds, map);
+            camera.render(player, map, tardis, controls.states);
+        });
+    </script>
+  </body>
+</html>
